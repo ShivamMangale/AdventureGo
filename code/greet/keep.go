@@ -36,17 +36,82 @@ func SourceToJSON(fileToRead io.Reader) (Story, error) {
 	return story, nil
 }
 
+//Options  to structue the possible input from user
+type Options func(h *handler)
+
+//ChooseTempl  is a function that will assign the template to be used
+//based on what the user wants
+func ChooseTempl(t int) Options {
+	return func(h *handler) {
+		if t == 2 {
+			h.t = createTemplate(secondtemplate)
+		}
+	}
+}
+
+//ChoosePathFn  is a function that will assign the appropriate function
+//to be used on what the user wants
+func ChoosePathFn(fn func(r *http.Request) string) Options {
+	return func(h *handler) {
+		h.pathFunction = fn
+	}
+}
+
 //NewHandler  a html handler
-func NewHandler(s Story) http.Handler {
-	return handler{s}
+func NewHandler(s Story, options ...Options) http.Handler {
+	var h handler
+	h.s = s
+	h.t = sampleTemplate
+	h.pathFunction = defaultPathFn
+
+	for _, opt := range options {
+		opt(&h)
+	}
+
+	return h
 }
 
 type handler struct {
-	s Story
+	s            Story
+	t            *template.Template
+	pathFunction func(r *http.Request) string
 }
 
 func createTemplate(filename string) *template.Template {
 	return template.Must(template.New("").Parse(filename))
+}
+
+var sampleTemplate = createTemplate(defaultTmplt)
+
+func defaultPathFn(r *http.Request) string {
+	pat := r.URL.Path
+	curpath := strings.TrimSpace(pat)
+	if curpath == "" || curpath == "/" {
+		curpath = "/intro"
+	}
+	curpath = curpath[1:]
+
+	return curpath
+}
+
+func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	tpl, err := h.t.Clone()
+	if err != nil {
+		log.Printf("%v\n", err)
+		http.Error(w, "Something went wrong!", http.StatusInternalServerError)
+	}
+
+	curpath := h.pathFunction(r)
+
+	if chapter, ok := h.s[curpath]; ok {
+		err := tpl.Execute(w, chapter)
+		if err != nil {
+			log.Printf("%v\n", err)
+			http.Error(w, "Something went wrong!", http.StatusInternalServerError)
+		}
+	} else {
+		http.Error(w, "Chapter Not Found!", http.StatusNotFound)
+	}
 }
 
 var defaultTmplt = `
@@ -93,27 +158,34 @@ var defaultTmplt = `
   {{end}}
 {{end}}`
 
-var sampleTemplate = createTemplate(defaultTmplt)
-
-func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	tpl, err := sampleTemplate.Clone()
-	if err != nil {
-		log.Printf("%v\n", err)
-		http.Error(w, "Something went wrong!", http.StatusInternalServerError)
-	}
-	curpath := strings.TrimSpace(r.URL.Path)
-	if curpath == "" || curpath == "/" {
-		curpath = "/intro"
-	}
-	curpath = curpath[1:]
-
-	if chapter, ok := h.s[curpath]; ok {
-		err := tpl.Execute(w, chapter)
-		if err != nil {
-			log.Printf("%v\n", err)
-			http.Error(w, "Something went wrong!", http.StatusInternalServerError)
-		}
-	} else {
-		http.Error(w, "Chapter Not Found!", http.StatusNotFound)
-	}
-}
+var secondtemplate = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>{{.Title}}</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0-rc.2/css/materialize.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  </head>
+  <body class="grey lighten-4">
+    <div class="row">
+        <div class="col m12">
+          <div class="card large horizontal z-depth-4 brown white-text">
+            <div class="card-stacked">
+              <h2 class="card-title">{{.Title}}</h2>
+              <div class="card-content">
+                {{range .StoryText}}
+                  <p>{{.}}</p>
+                {{end}}
+              </div>
+              <div class="card-action">
+                {{range .Paths}}
+                  <a href="{{.Chapter}}">{{.Text}}</p>
+                {{end}}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+  </body>
+</html>`
