@@ -172,7 +172,7 @@ var secondtemplate = `
         <div class="col m12">
           <div class="card large horizontal z-depth-4 brown white-text">
             <div class="card-stacked">
-              <h2 class="card-title">{{.Title}}</h2>
+              <h2 class="card-title">Adventure GO ->{{.Title}}</h2>
               <div class="card-content">
                 {{range .StoryText}}
                   <p>{{.}}</p>
